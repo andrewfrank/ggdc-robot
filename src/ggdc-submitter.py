@@ -100,6 +100,8 @@ def build_pairs_all(samplefile):
             pairs_dict[pair[0]] = [pair[1]]
     return(pairs_dict)
 
+# NEED TO FIGURE OUT HOW TO TRACK TMP FILE CREATION HERE
+
 # creates qfiles and rfiles for all 2 way comparisons; multiple rfiles of
 # roughly the same size per qfile are created when number of refs exceed
 # maxrefs value; also writes useful submission file pair info
@@ -125,6 +127,8 @@ def write_submission_files(pairs_dict, tmp_dir, maxrefs):
         qfile.write(query)
         files_dict[qfile_name] = rfile_names
     return(files_dict)
+
+# PASS TMP FILE CREATION TRACK TO THIS FUNCTION FOR SUBMISSION
 
 def submit_ggdc_jobs(email, blastVariant, tmp_dir):
     submission_count = 0
