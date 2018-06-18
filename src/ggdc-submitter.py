@@ -6,6 +6,10 @@
 # Controller for automatically submitting jobs to the Genome-to-Genome Distance
 # Calculator (GGDC) website: https://ggdc.dsmz.de/ggdc.php, using GGDC v2.1
 
+# todo
+# - figure out submission count - why isn't it updating per loop?
+# - replace subprocess.call w/ shell = true with safer method
+
 # DEPENDENCIES
 
 import argparse
@@ -100,11 +104,9 @@ def build_pairs_all(samplefile):
             pairs_dict[pair[0]] = [pair[1]]
     return(pairs_dict)
 
-# NEED TO FIGURE OUT HOW TO TRACK TMP FILE CREATION HERE
-
 # creates qfiles and rfiles for all 2 way comparisons; multiple rfiles of
 # roughly the same size per qfile are created when number of refs exceed
-# maxrefs value; also writes useful submission file pair info
+# maxrefs value; also outputs useful submission file pair info as a dict
 def write_submission_files(pairs_dict, tmp_dir, maxrefs):
     # iterate through query-reference pair dictionary
     files_dict = {}
@@ -112,38 +114,48 @@ def write_submission_files(pairs_dict, tmp_dir, maxrefs):
         # break refs into equal sized chunks 75 lines or smaller
         nchunks = len(refs)/maxrefs + 1
         ref_chunks = numpy.array_split(refs, nchunks)
-        # write ref files
-        rfile_names = []
+        # write files
         for j, ref_chunk in enumerate(ref_chunks):
-            refs_writeable = '\n'.join(ref_chunk)
-            rfile_name = os.path.join(tmp_dir,
-                                      'r' + str(i) + '-' + str(j) + '.txt')
-            rfile_names.append(rfile_name)
-            rfile = open(rfile_name, 'w')
-            rfile.write(refs_writeable)
-        # write query file
-        qfile_name = os.path.join(tmp_dir, 'q' + str(i) + '.txt')
-        qfile = open(qfile_name ,'w')
-        qfile.write(query)
-        files_dict[qfile_name] = rfile_names
+            # write ref file
+            rfile_name = os.path.join(tmp_dir,    # create rfile name
+                                      'r' + str(i) + '-' +
+                                      str(j) + '.txt')
+            refs_writeable = '\n'.join(ref_chunk) # format refs
+            rfile = open(rfile_name, 'w')         # open rfile
+            rfile.write(refs_writeable)           # write to rfile
+            # write query file
+            qfile_name = os.path.join(tmp_dir,    # create qfile name
+                                      'q' + str(i) + '-' +
+                                      str(j) + '.txt')
+            qfile = open(qfile_name ,'w')         # open qfile
+            qfile.write(query)                    # write to qfile
+            # write qfile rfile pair info to files_dict
+            files_dict[qfile_name] = rfile_name
     return(files_dict)
 
-# PASS TMP FILE CREATION TRACK TO THIS FUNCTION FOR SUBMISSION
-
-def submit_ggdc_jobs(email, blastVariant, tmp_dir):
+def submit_ggdc_jobs(crawler_path, files_dict, email, blastVariant):
+    job_count = 0
     submission_count = 0
-    qfile =
-    rfile =
-    subprocess.call(['py', 'ggdc-crawler.py',
-                     email, blastVariant, qfile, rfile],
-                    shell=True)
-    time.sleep(10)
+    for qfile, rfile in files_dict.items():
+        subprocess.call(['python', crawler_path,
+                 email, blastVariant, qfile, rfile],
+                shell = True)
+        job_count += 1
+        submission_count += 1
+        print('job count = ' + str(job_count))
+        print('submission count = ' + str(submission_count))
+        time.sleep(5)
+        if submission_count == 6:
+            print("6 jobs submitted. Pausing for 25 minutes.")
+            time.sleep(1500)
+    	    submission_count = 0 # submission count isn't updating???
 
-	if submission_count == 6:
-		submission_count = 0
-		print(counter2)
-		time.sleep(1500) # Pause for 25 min after 6 sets are subimtted. Continue running loop after.
 # SCRIPT
+
+#crawler_path = os.path.join(get_script_path(), 'ggdc-crawler.py')
+#tmp_dir = os.path.join(get_script_path(), 'tmp')
+crawler_path = 'P:\\Projects\\ggdc-submitter\\src\\ggdc-crawler.py'
+tmp_dir = 'P:\\Projects\\ggdc-submitter\\data'
 
 email = 'afrank@atcc.org'
 blastVariant = ['GBDP2_BLASTPLUS']
@@ -152,7 +164,6 @@ reffile = 'P:\\Projects\\ggdc-submitter\\data\\ref.txt'
 samplefile = 'P:\\Projects\\ggdc-submitter\\data\\samples.txt'
 maxrefs = 75
 
-tmp_dir = 'P:\\Projects\\ggdc-submitter'
-
 pairs_dict = build_pairs_rq(queryfile,reffile)
-write_submission_files(pairs_dict, tmp_dir, maxrefs = 75)
+files_dict = write_submission_files(pairs_dict, tmp_dir, maxrefs = 75)
+submit_ggdc_jobs(crawler_path, files_dict, email, blastVariant)
