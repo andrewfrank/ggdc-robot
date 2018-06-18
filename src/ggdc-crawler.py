@@ -42,7 +42,7 @@ def submit_file_values(file, type, format):
         submission = sep.join(lines)
         try:
             br.form.set_value(submission, control)
-            print(submission)
+            #print(submission)
         except:
             print('Error submitting ' + submission + ' ' + type + '.')
     elif format == 'filepath':
@@ -91,11 +91,10 @@ submit_file_values(file = reffile,
                    type = 'ref',
                    format = refformat)
 
-# code to check current control values...
-# for control in br.form.controls:
-#     print control
-
+# submit GGDC job
 submission = br.submit()
+
+# get GGDC job response
 submission_html = BeautifulSoup(submission, 'html.parser')
 message_html = submission_html.find('div', {'class': 'alert alert-success'})
 message = message_html.get_text()
