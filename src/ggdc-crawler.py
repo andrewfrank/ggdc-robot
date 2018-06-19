@@ -7,7 +7,12 @@
 # website: https://ggdc.dsmz.de/ggdc.php, using GGDC v2.1
 
 # todo
+# - handle ggdc server errors properly
 # - implement submission of multiple reference genome fasta files
+
+# notes
+# - currently using this search criteria on genbank to find genome accessions:
+# "Escherichia"[Organism] AND (complete[Properties] or "wgs master"[Properties]) 
 
 # DEPENDENCIES
 
@@ -96,6 +101,7 @@ submission = br.submit()
 
 # get GGDC job response
 submission_html = BeautifulSoup(submission, 'html.parser')
+# change this to handle error messages from ggdc as well
 message_html = submission_html.find('div', {'class': 'alert alert-success'})
 message = message_html.get_text()
 print(message)
