@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 
-# An updated and generalized version of scripts originally developed
-# by Katya McGough at American Type Culture Collection
+# ggdc-submitter v0.0.1
 
 # Controller for automatically submitting jobs to the Genome-to-Genome Distance
-# Calculator (GGDC) website: https://ggdc.dsmz.de/ggdc.php, using GGDC v2.1
+# Calculator (GGDC) website: https://ggdc.dsmz.de/ggdc.php, using GGDC v2.1.
+# Updated and generalized version of scripts originally developed by Katya
+# McGough at American Type Culture Collection.
 
 # todo
-# - figure out submission count - why isn't it updating per loop?
 # - replace subprocess.call w/ shell = true with safer method
 
 # DEPENDENCIES
@@ -133,22 +133,29 @@ def write_submission_files(pairs_dict, tmp_dir, maxrefs):
             files_dict[qfile_name] = rfile_name
     return(files_dict)
 
+# iteratively submits each qfile-rfile pair to GGDC using ggdc-crawler.py;
+# currently pauses for 25 minutes every 6th submission
 def submit_ggdc_jobs(crawler_path, files_dict, email, blastVariant):
-    job_count = 0
     submission_count = 0
-    for qfile, rfile in files_dict.items():
-        subprocess.call(['python', crawler_path,
-                 email, blastVariant, qfile, rfile],
-                shell = True)
-        job_count += 1
-        submission_count += 1
-        print('job count = ' + str(job_count))
-        print('submission count = ' + str(submission_count))
-        time.sleep(5)
-        if submission_count == 6:
-            print("6 jobs submitted. Pausing for 25 minutes.")
-            time.sleep(1500)
-    	    submission_count = 0 # submission count isn't updating???
+    jobs_requested = len(files_dict)
+    print('jobs requested = ' + str(jobs_requested))
+    for job_count, (qfile, rfile) in enumerate(files_dict.items()):
+        if submission_count == 6 and job_count <= jobs_requested:
+            print('6 jobs submitted. Pausing for 25 minutes.')
+            submission_count = 0
+            time.sleep(10)
+        if submission_count < 6 and job_count <= jobs_requested:
+            subprocess.call(['python', crawler_path,
+                     email, blastVariant, qfile, rfile],
+                    shell = True)
+            job_count += 1
+            submission_count += 1
+            print('job count = ' + str(job_count))
+            print('submission count = ' + str(submission_count))
+            time.sleep(5)
+        else:
+            print(('Error with GGDC job submission' + job_count +
+                   '. Skipping to the next job.'))
 
 # SCRIPT
 
