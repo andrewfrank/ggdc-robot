@@ -8,7 +8,7 @@
 # McGough at American Type Culture Collection.
 
 # todo
-# - replace subprocess.call w/ shell = true with safer method
+# - replace subprocess.call shell = true with safer method
 
 # DEPENDENCIES
 
@@ -24,38 +24,47 @@ import subprocess
 
 description = ('Automatically submit jobs to the Genome-to-Genome'
                'Distance Calculator (GGDC) website:'
-               'https://ggdc.dsmz.de/ggdc.php. Command line arguments must'
+               'https://ggdc.dsmz.de/ggdc.php. Command line arguments must '
                'include either BOTH --queryfile AND --reffile, OR ONLY'
                '--samplefile.')
 
 parser = argparse.ArgumentParser(description = description)
-parser.add_argument('--email',
-                    help = 'the email address where GGDC will send results')
-parser.add_argument('--blastVariant',
+parser.add_argument('--email','-e',
+                    help = 'the email address where GGDC will send results',
+                    required = True)
+parser.add_argument('--blastVariant','-b',
                     help = ('the alignment tool used to determine matches '
                     'between query and reference genomes; GGDC recommends '
-                    'BLAST+'))
-parser.add_argument('--queryfile',
-                    help = ('the full path to a text file where each new line '
-                    'contains EITHER the NCBI accession number for a query '
-                    'sequence OR the full path to a fasta file containing '
-                    'query sequence(s); identity for the entire list is '
-                    'parsed from the first entry'))
-parser.add_argument('--reffile',
+                    'BLAST+'),
+                    choices = ['GBDP2_BLASTPLUS','GBDP2_BLAT','GBDP2_BLASTZ',
+                    'GBDP2_WU-BLAST','GBDP2_MUMMER'],
+                    default = 'GBDP2_BLASTPLUS')
+files = parser.add_mutually_exclusive_group(required = True)
+files.add_argument('--samplefile','-s',
+                   help = ('the full path to a text file where each new line '
+                   'contains EITHER the NCBI accession number for all sample '
+                   'sequences OR the full path to a fasta file containing '
+                   'sample sequences; identity for the entire list is parsed '
+                   'from the first entry. WARNING: THIS OPTION IS '
+                   'POTENTIALLY EXTREMELY COMPUTATIONALLY INTENSIVE. VERBOSE '
+                   'FLAG IS RECOMMENDED TO AVOID IMPRACTICAL SUBMISSIONS '))
+files.add_argument('--queryfile','-q',
+                   help = ('the full path to a text file where each new line '
+                   'contains EITHER the NCBI accession number for a query '
+                   'sequence OR the full path to a fasta file containing '
+                   'query sequence(s); identity for the entire list is '
+                   'parsed from the first entry'))
+parser.add_argument('--reffile','-r',
                     help = ('the full path to a text file where each new line '
                     'contains EITHER the NCBI accession number for a reference '
                     'sequence OR the full path to a fasta file containing '
                     'reference sequence(s); identity for the entire list is '
-                    'parsed from the first entry'))
-parser.add_argument('--samplefile',
-                    help = ('the full path to a text file where each new line '
-                    'contains EITHER the NCBI accession number for all sample '
-                    'sequences OR the full path to a fasta file containing ' 'sample sequences; identity for the entire list is parsed '
-                    'from the first entry. WARNING: THIS OPTION IS '
-                    'POTENTIALLY EXTREMELY COMPUTATIONALLY INTENSIVE. VERBOSE ' 'FLAG IS RECOMMENDED TO AVOID IMPRACTICAL SUBMISSIONS '))
-parser.add_argument('--verbose',
+                    'parsed from the first entry'),
+                    required = '--queryfile' in sys.argv)
+parser.add_argument('--verbose','-v',
                     help = ('outputs text based checkpoints and interactive '
-                    'submission check.'))
+                    'submission check.'),
+                    action = 'store_true')
 args = parser.parse_args()
 
 # FUNCTIONS
@@ -159,16 +168,15 @@ def submit_ggdc_jobs(crawler_path, files_dict, email, blastVariant):
 
 # SCRIPT
 
-#crawler_path = os.path.join(get_script_path(), 'ggdc-crawler.py')
-#tmp_dir = os.path.join(get_script_path(), 'tmp')
-crawler_path = 'P:\\Projects\\ggdc-submitter\\src\\ggdc-crawler.py'
-tmp_dir = 'P:\\Projects\\ggdc-submitter\\data'
+crawler_path = os.path.join(get_script_path(), 'ggdc-crawler.py')
+tmp_dir = os.path.join(get_script_path(), 'tmp')
+if not os.path.exists(tmp_dir): os.makedirs(tmp_dir)
 
-email = 'afrank@atcc.org'
-blastVariant = ['GBDP2_BLASTPLUS']
-queryfile = 'P:\\Projects\\ggdc-submitter\\data\\query.txt'
-reffile = 'P:\\Projects\\ggdc-submitter\\data\\ref.txt'
-samplefile = 'P:\\Projects\\ggdc-submitter\\data\\samples.txt'
+email = args.email
+blastVariant = args.blastVariant
+queryfile = args.queryfile
+reffile = args.reffile
+samplefile = args.samplefile
 maxrefs = 75
 
 pairs_dict = build_pairs_rq(queryfile,reffile)

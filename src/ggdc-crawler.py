@@ -12,7 +12,7 @@
 
 # notes
 # - currently using this search criteria on genbank to find genome accessions:
-# "Escherichia"[Organism] AND (complete[Properties] or "wgs master"[Properties]) 
+# "Escherichia"[Organism] AND (complete[Properties] or "wgs master"[Properties])
 
 # DEPENDENCIES
 
