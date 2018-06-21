@@ -7,6 +7,7 @@
 # website: https://ggdc.dsmz.de/ggdc.php, using GGDC v2.1
 
 # todo
+# - implement ggdc server load reporting
 # - handle ggdc server errors properly
 # - implement submission of multiple reference genome fasta files
 
@@ -77,10 +78,18 @@ blastVariant = [sys.argv[2]]
 queryfile = sys.argv[3]
 reffile = sys.argv[4]
 
+# debugging variables
+email = 'afrank@atcc.org'
+blastVariant = ['GBDP2_BLASTPLUS']
+queryfile = 'P:\\Projects\\ggdc-submitter\\src\\submissions\\q0-0.txt'
+reffile = 'P:\\Projects\\ggdc-submitter\\src\\submissions\\r0-0.txt'
+
+# browse to GGDC website
 br = mechanize.Browser()
 br.open(url)
-br.select_form('Form')                          # GGDC form name is just "Form"
 
+# begin filling out GGDC form
+br.select_form('Form')                          # GGDC form name is just "Form"
 br.form.set_value(email, 'email')               # fill in email accession form
 br.form.set_value(blastVariant, 'blastVariant') # fill in GGDC BLAST method form
 
@@ -101,7 +110,10 @@ submission = br.submit()
 
 # get GGDC job response
 submission_html = BeautifulSoup(submission, 'html.parser')
-# change this to handle error messages from ggdc as well
-message_html = submission_html.find('div', {'class': 'alert alert-success'})
-message = message_html.get_text()
-print(message)
+try:
+    response_html = submission_html.find('div', {'class': 'alert alert-success'})
+    response = response_html.get_text()
+except:
+    response_html = submission_html.find('div', {'class': 'panel-body alert-danger'})
+    response = response_html.get_text()
+print(response)

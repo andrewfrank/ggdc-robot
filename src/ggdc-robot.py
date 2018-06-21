@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# ggdc-submitter v0.0.1
+__version__ = '0.0.2'
 
 # Controller for automatically submitting jobs to the Genome-to-Genome Distance
 # Calculator (GGDC) website: https://ggdc.dsmz.de/ggdc.php, using GGDC v2.1.
@@ -8,7 +8,9 @@
 # McGough at American Type Culture Collection.
 
 # todo
+# - implement "holding pattern" mode (waiting until ggdc server load dips below 100% before submitting next job)
 # - replace subprocess.call shell = true with safer method
+# - create new main script called ggdc-robot to act as executive script
 
 # DEPENDENCIES
 
@@ -35,25 +37,25 @@ parser.add_argument('--email','-e',
 parser.add_argument('--blastVariant','-b',
                     help = ('the alignment tool used to determine matches '
                     'between query and reference genomes; GGDC recommends '
-                    'BLAST+'),
+                    'GBDP2_BLASTPLUS'),
                     choices = ['GBDP2_BLASTPLUS','GBDP2_BLAT','GBDP2_BLASTZ',
                     'GBDP2_WU-BLAST','GBDP2_MUMMER'],
                     default = 'GBDP2_BLASTPLUS')
-files = parser.add_mutually_exclusive_group(required = True)
-files.add_argument('--samplefile','-s',
-                   help = ('the full path to a text file where each new line '
-                   'contains EITHER the NCBI accession number for all sample '
-                   'sequences OR the full path to a fasta file containing '
-                   'sample sequences; identity for the entire list is parsed '
-                   'from the first entry. WARNING: THIS OPTION IS '
-                   'POTENTIALLY EXTREMELY COMPUTATIONALLY INTENSIVE. VERBOSE '
-                   'FLAG IS RECOMMENDED TO AVOID IMPRACTICAL SUBMISSIONS '))
-files.add_argument('--queryfile','-q',
-                   help = ('the full path to a text file where each new line '
-                   'contains EITHER the NCBI accession number for a query '
-                   'sequence OR the full path to a fasta file containing '
-                   'query sequence(s); identity for the entire list is '
-                   'parsed from the first entry'))
+ifiles = parser.add_mutually_exclusive_group(required = True)
+ifiles.add_argument('--samplefile','-s',
+                    help = ('the full path to a text file where each new line '
+                    'contains EITHER the NCBI accession number for all sample '
+                    'sequences OR the full path to a fasta file containing '
+                    'sample sequences; identity for the entire list is parsed '
+                    'from the first entry; WARNING: THIS OPTION IS '
+                    'POTENTIALLY EXTREMELY COMPUTATIONALLY INTENSIVE. VERBOSE '
+                    'FLAG IS RECOMMENDED TO AVOID IMPRACTICAL SUBMISSIONS '))
+ifiles.add_argument('--queryfile','-q',
+                    help = ('the full path to a text file where each new line '
+                    'contains EITHER the NCBI accession number for a query '
+                    'sequence OR the full path to a fasta file containing '
+                    'query sequence(s); identity for the entire list is '
+                    'parsed from the first entry'))
 parser.add_argument('--reffile','-r',
                     help = ('the full path to a text file where each new line '
                     'contains EITHER the NCBI accession number for a reference '
@@ -61,10 +63,26 @@ parser.add_argument('--reffile','-r',
                     'reference sequence(s); identity for the entire list is '
                     'parsed from the first entry'),
                     required = '--queryfile' in sys.argv)
+parser.add_argument('--bruteforce', '-f',
+                    help = ('enable brute force mode; this mode forces '
+                    'ggdc-robot to submit jobs to the GGDC server when the '
+                    'server load is at 100%; ATTENTION: jobs may fail due to '
+                    'GGDC job queue limits'),
+                    action = 'store_true')
+parser.add_argument('--wait', '-w',
+                    help = ('enable waiting mode; this mode forces '
+                    'ggdc-robot to wait the X minutes every Y jobs '
+                    'submitted. E.g. --wait 25 6 will force ggdc-robot to '
+                    'wait 25 minutes between every set of 6 jobs submitted.'),
+                    type = int,
+                    nargs = 2)
 parser.add_argument('--verbose','-v',
                     help = ('outputs text based checkpoints and interactive '
                     'submission check.'),
                     action = 'store_true')
+parser.add_argument('--version',
+                    action = 'version',
+                    version = __version__)
 args = parser.parse_args()
 
 # FUNCTIONS
@@ -116,7 +134,7 @@ def build_pairs_all(samplefile):
 # creates qfiles and rfiles for all 2 way comparisons; multiple rfiles of
 # roughly the same size per qfile are created when number of refs exceed
 # maxrefs value; also outputs useful submission file pair info as a dict
-def write_submission_files(pairs_dict, tmp_dir, maxrefs):
+def write_submission_files(pairs_dict, submissions_dir, maxrefs):
     # iterate through query-reference pair dictionary
     files_dict = {}
     for i, (query, refs) in enumerate(pairs_dict.items()):
@@ -126,14 +144,14 @@ def write_submission_files(pairs_dict, tmp_dir, maxrefs):
         # write files
         for j, ref_chunk in enumerate(ref_chunks):
             # write ref file
-            rfile_name = os.path.join(tmp_dir,    # create rfile name
+            rfile_name = os.path.join(submissions_dir,    # create rfile name
                                       'r' + str(i) + '-' +
                                       str(j) + '.txt')
             refs_writeable = '\n'.join(ref_chunk) # format refs
             rfile = open(rfile_name, 'w')         # open rfile
             rfile.write(refs_writeable)           # write to rfile
             # write query file
-            qfile_name = os.path.join(tmp_dir,    # create qfile name
+            qfile_name = os.path.join(submissions_dir,    # create qfile name
                                       'q' + str(i) + '-' +
                                       str(j) + '.txt')
             qfile = open(qfile_name ,'w')         # open qfile
@@ -144,41 +162,79 @@ def write_submission_files(pairs_dict, tmp_dir, maxrefs):
 
 # iteratively submits each qfile-rfile pair to GGDC using ggdc-crawler.py;
 # currently pauses for 25 minutes every 6th submission
-def submit_ggdc_jobs(crawler_path, files_dict, email, blastVariant):
+def submit_ggdc_jobs(bruteforce, wait, status_path, submit_path, files_dict, email, blastVariant):
     submission_count = 0
     jobs_requested = len(files_dict)
-    print('jobs requested = ' + str(jobs_requested))
+    print('Jobs requested = ' + str(jobs_requested))
     for job_count, (qfile, rfile) in enumerate(files_dict.items()):
-        if submission_count == 6 and job_count <= jobs_requested:
-            print('6 jobs submitted. Pausing for 25 minutes.')
-            submission_count = 0
-            time.sleep(10)
-        if submission_count < 6 and job_count <= jobs_requested:
-            subprocess.call(['python', crawler_path,
-                     email, blastVariant, qfile, rfile],
-                    shell = True)
+        status = subprocess.check_output(['python', status_path], shell = True)
+        print(status)
+        if bruteforce is not None:
+           while '100%' in status:
+               print(('All GGDC server slots are currently used. Waiting '
+                      '10 minutes before attempting additional submissions.'))
+               print('Waiting to submit job ' + str(job_count) + '.')
+               if wait is not None:
+                   print('This is job ' + str(submission_count) +
+                         ' of this submission set.')
+               time.sleep(600)     # wait 10 minutes
+        if (wait is not None and
+            submission_count == wait[1] and
+            job_count <= jobs_requested):
+               print(wait[1] + ' jobs submitted. Pausing for ' +
+                     wait[0] + ' minutes.')
+               submission_count = 0
+               time.sleep(wait[0] * 60)
+        if job_count <= jobs_requested:
+            submission = subprocess.check_output(['python', submit_path,
+                                                 email, blastVariant, qfile, rfile],
+                                                 shell = True)
             job_count += 1
             submission_count += 1
-            print('job count = ' + str(job_count))
-            print('submission count = ' + str(submission_count))
-            time.sleep(5)
+            if 'Dear User,' in submission:
+                print(submission)
+                print('Successfully submitted job ' + str(job_count) + '.')
+                if wait is not None:
+                    print('This is job ' + str(submission_count) +
+                          ' of this submission set.')
+            else:
+                print(submission)
+                print('Job ' + str(job_count) +
+                      ' failed. Skipping to the next job.')
+            time.sleep(2)
         else:
-            print(('Error with GGDC job submission' + job_count +
+            print(('Error with GGDC job ' + job_count +
                    '. Skipping to the next job.'))
 
 # SCRIPT
 
-crawler_path = os.path.join(get_script_path(), 'ggdc-crawler.py')
-tmp_dir = os.path.join(get_script_path(), 'tmp')
-if not os.path.exists(tmp_dir): os.makedirs(tmp_dir)
+status_path = os.path.join(get_script_path(), 'ggdc-status.py')
+submit_path = os.path.join(get_script_path(), 'ggdc-submit.py')
+submissions_dir = os.path.join(get_script_path(), 'submissions')
+if not os.path.exists(submissions_dir): os.makedirs(submissions_dir)
 
 email = args.email
 blastVariant = args.blastVariant
 queryfile = args.queryfile
 reffile = args.reffile
 samplefile = args.samplefile
+
+bruteforce = args.bruteforce
+wait = args.wait
+
 maxrefs = 75
 
-pairs_dict = build_pairs_rq(queryfile,reffile)
-files_dict = write_submission_files(pairs_dict, tmp_dir, maxrefs = 75)
-submit_ggdc_jobs(crawler_path, files_dict, email, blastVariant)
+if args.queryfile and args.reffile is not None:
+    pairs_dict = build_pairs_rq(queryfile,reffile)
+elif args.queryfile is not None and args.reffile is None:
+    sys.exit(('You must submit a query file and reference file together. '
+              'Exiting.'))
+elif args.samplefile is not None:
+    pairs_dict = build_pairs_all(samplefile)
+else:
+    sys.exit('Error with data file specification on the command line. Exiting.')
+
+files_dict = write_submission_files(pairs_dict, submissions_dir, maxrefs = 75)
+submit_ggdc_jobs(bruteforce, wait,
+                 status_path, submit_path,
+                 files_dict, email, blastVariant)
