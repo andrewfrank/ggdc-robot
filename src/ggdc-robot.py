@@ -160,6 +160,17 @@ def write_submission_files(pairs_dict, submissions_dir, maxrefs):
             files_dict[qfile_name] = rfile_name
     return(files_dict)
 
+def get_ggdc_status(url):
+    # browse to GGDC website
+    br = mechanize.Browser()
+    page = br.open(url)
+    # check server load
+    page_html = BeautifulSoup(page, 'html.parser')
+    status_html = page_html.find('div', {'class': 'progress'})
+    status = status_html.get_text()
+    status_message = 'Current GGDC server load:' + status
+    return(status_message)
+
 # iteratively submits each qfile-rfile pair to GGDC using ggdc-crawler.py;
 # currently pauses for 25 minutes every 6th submission
 def submit_ggdc_jobs(bruteforce, wait, status_path, submit_path, files_dict, email, blastVariant):
@@ -167,7 +178,8 @@ def submit_ggdc_jobs(bruteforce, wait, status_path, submit_path, files_dict, ema
     jobs_requested = len(files_dict)
     print('Jobs requested = ' + str(jobs_requested))
     for job_count, (qfile, rfile) in enumerate(files_dict.items()):
-        status = subprocess.check_output(['python', status_path], shell = True)
+#       status = subprocess.check_output(['python', status_path], shell = True)
+        status = get_ggdc_status(url)
         print(status)
         if bruteforce is not None:
            while '100%' in status:
@@ -208,7 +220,7 @@ def submit_ggdc_jobs(bruteforce, wait, status_path, submit_path, files_dict, ema
 
 # SCRIPT
 
-status_path = os.path.join(get_script_path(), 'ggdc-status.py')
+# status_path = os.path.join(get_script_path(), 'ggdc-status.py')
 submit_path = os.path.join(get_script_path(), 'ggdc-submit.py')
 submissions_dir = os.path.join(get_script_path(), 'submissions')
 if not os.path.exists(submissions_dir): os.makedirs(submissions_dir)
