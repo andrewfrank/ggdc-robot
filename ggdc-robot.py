@@ -171,6 +171,7 @@ def get_ggdc_status(url):
     # browse to GGDC website
     br = mechanize.Browser()
     page = br.open(url)
+
     # check server load
     page_html = BeautifulSoup(page, 'html.parser')
     status_html = page_html.find('div', {'class': 'progress'})
@@ -181,6 +182,7 @@ def get_ggdc_status(url):
 def submit_file_values(file, type, format):
     with open(file) as infile:
         lines = infile.read().splitlines()
+
     if format == 'accession':
         if type == 'query':
             control = 'targetName'
@@ -194,6 +196,7 @@ def submit_file_values(file, type, format):
             #print(submission)
         except:
             print('Error submitting ' + submission + ' ' + type + '.')
+
     elif format == 'filepath':
         if type == 'query': name = 'targetGenome'
         elif type == 'ref': name = 'multipleRefGenomes[]'
@@ -211,6 +214,7 @@ def submit_file_values(file, type, format):
                                      name = name)
                 except:
                     print('Error submitting ' + submission + ' ' + type + '.')
+
     else: sys.exit('Unable to submit ' + type + ' ' + format + '. Exiting.')
 
 def ggdc_submit(url, email, blastVariant, queryfile, reffile):
@@ -219,9 +223,9 @@ def ggdc_submit(url, email, blastVariant, queryfile, reffile):
     br.open(url)
 
     # begin filling out GGDC form
-    br.select_form('Form')                       # GGDC form name is just "Form"
-    br.form.set_value(email, 'email')            # fill in email accession form
-    br.form.set_value(blastVariant, 'blastVariant') # fill in BLAST method form
+    br.select_form('Form')                          # GGDC form name is "Form"
+    br.form.set_value(email, 'email')               # fill in email form
+    br.form.set_value([blastVariant], 'blastVariant') # fill in BLAST method form
 
     # fill in query form per format submitted
     queryformat = check_submission_format(queryfile)
@@ -250,13 +254,16 @@ def ggdc_submit(url, email, blastVariant, queryfile, reffile):
 
 # iteratively submits each qfile-rfile pair to GGDC using ggdc-crawler.py;
 # currently pauses for 25 minutes every 6th submission
-def submit_ggdc_jobs(bruteforce, wait, status_path, submit_path, files_dict, email, blastVariant):
+def submit_ggdc_jobs(url, email, blastVariant, files_dict, bruteforce, wait):
+
     submission_count = 0
     jobs_requested = len(files_dict)
     print('Jobs requested = ' + str(jobs_requested))
+
     for job_count, (qfile, rfile) in enumerate(files_dict.items()):
         status = get_ggdc_status(url)
         print(status)
+
         if bruteforce is not None:
            while '100%' in status:
                print(('All GGDC server slots are currently used. Waiting '
@@ -266,6 +273,7 @@ def submit_ggdc_jobs(bruteforce, wait, status_path, submit_path, files_dict, ema
                    print('This is job ' + str(submission_count) +
                          ' of this submission set.')
                time.sleep(600)     # wait 10 minutes
+
         if (wait is not None and
             submission_count == wait[1] and
             job_count <= jobs_requested):
@@ -273,12 +281,9 @@ def submit_ggdc_jobs(bruteforce, wait, status_path, submit_path, files_dict, ema
                      wait[0] + ' minutes.')
                submission_count = 0
                time.sleep(wait[0] * 60)
+
         if job_count <= jobs_requested:
-            submission = ggdc_submit(url,
-                                     email,
-                                     blastVariant,
-                                     queryfile,
-                                     reffile)
+            submission = ggdc_submit(url, email, blastVariant, qfile, rfile)
             job_count += 1
             submission_count += 1
             if 'Dear User,' in submission:
@@ -292,14 +297,14 @@ def submit_ggdc_jobs(bruteforce, wait, status_path, submit_path, files_dict, ema
                 print('Job ' + str(job_count) +
                       ' failed. Skipping to the next job.')
             time.sleep(2)
+
         else:
             print(('Error with GGDC job ' + job_count +
                    '. Skipping to the next job.'))
 
 def main(args):
 
-    submissions_dir = os.path.join(get_script_path(), 'submissions')
-    if not os.path.exists(submissions_dir): os.makedirs(submissions_dir)
+    url = 'http://ggdc.dsmz.de/ggdc.php'
 
     email = args.email
     blastVariant = args.blastVariant
@@ -322,12 +327,13 @@ def main(args):
     else:
         sys.exit('Error with data file specification on the command line. Exiting.')
 
+    submissions_dir = os.path.join(get_script_path(), 'submissions')
+    if not os.path.exists(submissions_dir): os.makedirs(submissions_dir)
     files_dict = write_submission_files(pairs_dict,
                                         submissions_dir,
                                         maxrefs = 75)
-    submit_ggdc_jobs(bruteforce, wait,
-                     status_path, submit_path,
-                     files_dict, email, blastVariant)
+
+    submit_ggdc_jobs(url, email, blastVariant, files_dict, bruteforce, wait)
 
 if __name__ == "__main__":
-    main(args = args)
+    main(args)
