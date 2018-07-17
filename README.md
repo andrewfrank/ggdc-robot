@@ -1,1 +1,1 @@
-# ggdc-submitter
+# ggdc-robot
