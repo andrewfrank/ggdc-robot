@@ -2,10 +2,8 @@
 
 __version__ = '0.0.3'
 
-# Controller for automatically submitting jobs to the Genome-to-Genome Distance
-# Calculator (GGDC) website: https://ggdc.dsmz.de/ggdc.php, using GGDC v2.1.
-# Updated and generalized version of scripts originally developed by Katya
-# McGough at American Type Culture Collection.
+# Automatically submit jobs to the Genome-to-Genome Distance Calculator (GGDC)
+# website: https://ggdc.dsmz.de/ggdc.php, using GGDC v2.1.
 
 # DEPENDENCIES
 
@@ -27,55 +25,76 @@ description = ('Automatically submit jobs to the Genome-to-Genome'
                '--samplefile.')
 
 parser = argparse.ArgumentParser(description = description)
-parser.add_argument('--email','-e',
-                    help = 'the email address where GGDC will send results',
-                    required = True)
-parser.add_argument('--blastVariant','-b',
-                    help = ('the alignment tool used to determine matches '
-                    'between query and reference genomes; GGDC recommends '
-                    'GBDP2_BLASTPLUS'),
-                    choices = ['GBDP2_BLASTPLUS','GBDP2_BLAT','GBDP2_BLASTZ',
-                    'GBDP2_WU-BLAST','GBDP2_MUMMER'],
-                    default = 'GBDP2_BLASTPLUS')
 ifiles = parser.add_mutually_exclusive_group(required = True)
+submit = parser.add_mutually_exclusive_group(required = True)
+
+# Required file arguments
 ifiles.add_argument('--samplefile','-s',
                     help = ('the full path to a text file where each new line '
                     'contains EITHER the NCBI accession number for all sample '
                     'sequences OR the full path to a fasta file containing '
                     'sample sequences; identity for the entire list is parsed '
-                    'from the first entry; WARNING: THIS OPTION IS '
-                    'POTENTIALLY EXTREMELY COMPUTATIONALLY INTENSIVE. VERBOSE '
-                    'FLAG IS RECOMMENDED TO AVOID IMPRACTICAL SUBMISSIONS '))
+                    'from the first entry; NOTICE: THIS OPTION IS '
+                    'POTENTIALLY EXTREMELY COMPUTATIONALLY INTENSIVE.'),
+                    metavar = 'FILE')
 ifiles.add_argument('--queryfile','-q',
                     help = ('the full path to a text file where each new line '
                     'contains EITHER the NCBI accession number for a query '
                     'sequence OR the full path to a fasta file containing '
                     'query sequence(s); identity for the entire list is '
-                    'parsed from the first entry'))
+                    'parsed from the first entry.'),
+                    metavar = 'FILE')
 parser.add_argument('--reffile','-r',
                     help = ('the full path to a text file where each new line '
                     'contains EITHER the NCBI accession number for a reference '
                     'sequence OR the full path to a fasta file containing '
                     'reference sequence(s); identity for the entire list is '
-                    'parsed from the first entry'),
+                    'parsed from the first entry.'),
+                    metavar = 'FILE',
                     required = '--queryfile' in sys.argv)
-parser.add_argument('--bruteforce', '-f',
+
+# Required arguments
+parser.add_argument('--email','-e',
+                    help = 'the email address where GGDC will send results.',
+                    metavar = 'EMAIL ADDRESS',
+                    required = True)
+submit.add_argument('--slotusage', '-u',
+                    help = ('enable slot usage waiting mode; this mode forces '
+                    'ggdc-robot to pause for 10 minutes before attempting to '
+                    'submit another job when GGDC servers reach this '
+                    'specificied capacity. E.g. --slotusage 50 will prompt '
+                    'ggdc-robot to wait 10 minutes when GGDC server slot usage '
+                    'reaches 50 percent.'),
+                    metavar = 'PERCENT')
+submit.add_argument('--bruteforce', '-f',
                     help = ('enable brute force mode; this mode forces '
                     'ggdc-robot to submit jobs to the GGDC server even when the'
-                    'server load is at 100%; ATTENTION: jobs may fail due to '
-                    'GGDC job queue limits'),
+                    'server load is at 100 percent; ATTENTION: jobs may fail due to GGDC job queue limits.'),
                     action = 'store_true')
-parser.add_argument('--wait', '-w',
-                    help = ('enable waiting mode; this mode forces '
+
+# Optional arguments
+parser.add_argument('--blastVariant','-b',
+                    help = ('the alignment tool used to determine matches '
+                    'between query and reference genomes; GGDC recommends '
+                    'GBDP2_BLASTPLUS.'),
+                    choices = ['GBDP2_BLASTPLUS','GBDP2_BLAT','GBDP2_BLASTZ',
+                    'GBDP2_WU-BLAST','GBDP2_MUMMER'],
+                    default = 'GBDP2_BLASTPLUS')
+parser.add_argument('--timedwait', '-t',
+                    help = ('enable timed waiting mode; this mode forces '
                     'ggdc-robot to wait the X minutes every Y jobs '
                     'submitted. E.g. --wait 25 6 will force ggdc-robot to '
-                    'wait 25 minutes between every set of 6 jobs submitted.'),
+                    'wait 25 minutes between every set of 6 jobs submitted. '
+                    'Can be combined with --usagewait if desired.'),
+                    metavar = ('MINUTES','JOBS'),
                     type = int,
                     nargs = 2)
-parser.add_argument('--verbose','-v',
-                    help = ('outputs text based checkpoints and interactive '
-                    'submission check.'),
-                    action = 'store_true')
+
+# Help arguments
+# parser.add_argument('--verbose','-v',
+#                     help = ('outputs text based checkpoints and interactive '
+#                     'submission check.'),
+#                     action = 'store_true')
 parser.add_argument('--version',
                     action = 'version',
                     version = __version__)
@@ -168,6 +187,7 @@ def check_submission_format(file):
         sys.exit(file + ' not found.')
 
 def get_ggdc_status(url):
+
     # browse to GGDC website
     br = mechanize.Browser()
     page = br.open(url)
@@ -176,48 +196,11 @@ def get_ggdc_status(url):
     page_html = BeautifulSoup(page, 'html.parser')
     status_html = page_html.find('div', {'class': 'progress'})
     status = status_html.get_text()
-    status_message = 'Current GGDC server load:' + status
-    return(status_message)
-
-def submit_file_values(file, type, format):
-    with open(file) as infile:
-        lines = infile.read().splitlines()
-
-    if format == 'accession':
-        if type == 'query':
-            control = 'targetName'
-            sep = ' '
-        elif type == 'ref':
-            control = 'refGenbank'
-            sep = '\r\n'
-        submission = sep.join(lines)
-        try:
-            br.form.set_value(submission, control)
-            #print(submission)
-        except:
-            print('Error submitting ' + submission + ' ' + type + '.')
-
-    elif format == 'filepath':
-        if type == 'query': name = 'targetGenome'
-        elif type == 'ref': name = 'multipleRefGenomes[]'
-        for submission in lines:
-            # ----- START ERROR FOR MULTIPLE REF FASTAS ----- #
-            if len(lines) > 1:
-                sys.exit('Sorry, submission of multiple reference fasta files '
-                         'is not yet supported. Exiting.')
-            else:
-            # ----- END ERROR FOR MULTIPLE REF FASTAS ----- #
-                try:
-                    br.form.add_file(open(submission),
-                                     'text/plain',
-                                     submission,
-                                     name = name)
-                except:
-                    print('Error submitting ' + submission + ' ' + type + '.')
-
-    else: sys.exit('Unable to submit ' + type + ' ' + format + '. Exiting.')
+    status_int = status.split("%", )
+    return(status_int[0])
 
 def ggdc_submit(url, email, blastVariant, queryfile, reffile):
+
     # browse to GGDC website
     br = mechanize.Browser()
     br.open(url)
@@ -227,17 +210,59 @@ def ggdc_submit(url, email, blastVariant, queryfile, reffile):
     br.form.set_value(email, 'email')               # fill in email form
     br.form.set_value([blastVariant], 'blastVariant') # fill in BLAST method form
 
-    # fill in query form per format submitted
+    # fill in query form from queryfile
     queryformat = check_submission_format(queryfile)
-    submit_file_values(file = queryfile,
-                       type = 'query',
-                       format = queryformat)
+    with open(queryfile) as infile: qlines = infile.read().splitlines()
 
-    # fill in ref form per format submitted
+    if queryformat == 'accession':
+        control = 'targetName'
+        sep = ' '
+        values = sep.join(qlines)
+        try:
+            br.form.set_value(values, control)
+        except:
+            print('Error submitting ' + values + ' ' + type + '.')
+    elif queryformat == 'filepath':
+        name = 'targetGenome'
+        if len(qlines) > 1:
+            sys.exit('Sorry, submission of multiple fasta files is not yet '
+                     'supported. Exiting.')
+        else:
+            try:
+                br.form.add_file(open(values),
+                                 'text/plain',
+                                 values,
+                                 name = name)
+            except:
+                print('Error submitting ' + values + ' ' + type + '.')
+    else: sys.exit('Unable to submit ' + type + ' ' + format + '. Exiting.')
+
+    # fill in ref form from reffile
     refformat = check_submission_format(reffile)
-    submit_file_values(file = reffile,
-                       type = 'ref',
-                       format = refformat)
+    with open(reffile) as infile: rlines = infile.read().splitlines()
+
+    if refformat == 'accession':
+        control = 'refGenbank'
+        sep = '\r\n'
+        values = sep.join(rlines)
+        try:
+            br.form.set_value(values, control)
+        except:
+            print('Error submitting ' + values + ' ' + type + '.')
+    elif refformat == 'filepath':
+        name = 'multipleRefGenomes[]'
+        if len(rlines) > 1:
+            sys.exit('Sorry, submission of multiple fasta files is not yet '
+                     'supported. Exiting.')
+        else:
+            try:
+                br.form.add_file(open(values),
+                                 'text/plain',
+                                 values,
+                                 name = name)
+            except:
+                print('Error submitting ' + values + ' ' + type + '.')
+    else: sys.exit('Unable to submit ' + type + ' ' + format + '. Exiting.')
 
     # submit GGDC job
     submission = br.submit()
@@ -250,28 +275,36 @@ def ggdc_submit(url, email, blastVariant, queryfile, reffile):
     except:
         response_html = submission_html.find('div', {'class': 'panel-body alert-danger'})
         response = response_html.get_text()
-    print(response)
+    return(response)
 
 # iteratively submits each qfile-rfile pair to GGDC using ggdc-crawler.py;
 # currently pauses for 25 minutes every 6th submission
-def submit_ggdc_jobs(url, email, blastVariant, files_dict, bruteforce, wait):
+def ggdc_submission_controller(url, email, blastVariant, files_dict,
+                               bruteforce, wait, slotusage):
 
     submission_count = 0
     jobs_requested = len(files_dict)
     print('Jobs requested = ' + str(jobs_requested))
+    print('---------------------------------------------------')
 
-    for job_count, (qfile, rfile) in enumerate(files_dict.items()):
+    for job_count, (qfile, rfile) in enumerate(files_dict.items(), 1):
+        job_counter = str(job_count) + '/' + str(jobs_requested)
+
         status = get_ggdc_status(url)
-        print(status)
+        status_message = 'Current GGDC server load:' + status + '%'
+        print(status_message)
 
-        if bruteforce is not None:
-           while '100%' in status:
-               print(('All GGDC server slots are currently used. Waiting '
-                      '10 minutes before attempting additional submissions.'))
-               print('Waiting to submit job ' + str(job_count) + '.')
+        if bruteforce is False:
+           if status >= slotusage:
+               print( slotusage +
+                     (' percent of GGDC server slots are currently used, '
+                      'waiting 10 minutes before attempting additional '
+                      'submissions.'))
+               print('Waiting to submit job ' + job_counter + '.')
                if wait is not None:
                    print('This is job ' + str(submission_count) +
                          ' of this submission set.')
+               print('---------------------------------------------------')
                time.sleep(600)     # wait 10 minutes
 
         if (wait is not None and
@@ -286,21 +319,26 @@ def submit_ggdc_jobs(url, email, blastVariant, files_dict, bruteforce, wait):
             submission = ggdc_submit(url, email, blastVariant, qfile, rfile)
             job_count += 1
             submission_count += 1
+            print('GGDC server message:')
             if 'Dear User,' in submission:
                 print(submission)
-                print('Successfully submitted job ' + str(job_count) + '.')
+                print('Successfully submitted job ' + job_counter + '.')
                 if wait is not None:
                     print('This is job ' + str(submission_count) +
                           ' of this submission set.')
+                print('---------------------------------------------------')
+
             else:
                 print(submission)
-                print('Job ' + str(job_count) +
+                print('Job ' + job_counter +
                       ' failed. Skipping to the next job.')
+                print('---------------------------------------------------')
             time.sleep(2)
 
         else:
-            print(('Error with GGDC job ' + job_count +
+            print(('Error with GGDC job ' + job_counter +
                    '. Skipping to the next job.'))
+            print('---------------------------------------------------')
 
 def main(args):
 
@@ -312,8 +350,9 @@ def main(args):
     reffile = args.reffile
     samplefile = args.samplefile
 
+    slotusage = args.slotusage
     bruteforce = args.bruteforce
-    wait = args.wait
+    wait = args.timedwait
 
     maxrefs = 75
 
@@ -333,7 +372,9 @@ def main(args):
                                         submissions_dir,
                                         maxrefs = 75)
 
-    submit_ggdc_jobs(url, email, blastVariant, files_dict, bruteforce, wait)
+    ggdc_submission_controller(url, email, blastVariant, files_dict,
+                               bruteforce, wait, slotusage)
+    sys.exit('Script complete. Exiting.')
 
 if __name__ == "__main__":
     main(args)
