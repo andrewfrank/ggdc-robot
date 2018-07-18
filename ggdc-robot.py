@@ -109,17 +109,20 @@ def get_script_path():
 # builds a list of lists for all unique 2 way comparisons from input queryfile
 # and reffile
 def build_pairs_rq(queryfile, reffile):
+
     # get line values from query and ref files
     with open(queryfile) as infile:
         qlines = infile.read().splitlines()
     with open(reffile) as infile:
         rlines = infile.read().splitlines()
+
     # create list of query-reference pairs
     pairs = []
     for qline in qlines:
         for rline in rlines:
             pair = [qline, rline]
             pairs.append(pair)
+
     # create dictionary where query is a key and value is a list of refs
     pairs_dict = {}
     for pair in pairs:
@@ -132,11 +135,14 @@ def build_pairs_rq(queryfile, reffile):
 # builds a list of lists for all unique 2 way comparisons from input samplefile
 # risks making a fuck ton of comparisons, since it's n choose 2
 def build_pairs_all(samplefile):
+
     # get line values from sample file
     with open(samplefile) as infile:
         lines = infile.read().splitlines()
+
     # create list of query-reference pairs
     pairs = list(itertools.combinations(lines,2))
+
     # create dictionary where query is a key and value is a list of refs
     pairs_dict = {}
     for pair in pairs:
@@ -150,14 +156,18 @@ def build_pairs_all(samplefile):
 # roughly the same size per qfile are created when number of refs exceed
 # maxrefs value; also outputs useful submission file pair info as a dict
 def write_submission_files(pairs_dict, submissions_dir, maxrefs):
+
     # iterate through query-reference pair dictionary
     files_dict = {}
     for i, (query, refs) in enumerate(pairs_dict.items()):
+
         # break refs into equal sized chunks 75 lines or smaller
         nchunks = len(refs)/maxrefs + 1
         ref_chunks = numpy.array_split(refs, nchunks)
+
         # write files
         for j, ref_chunk in enumerate(ref_chunks):
+
             # write ref file
             rfile_name = os.path.join(submissions_dir,    # create rfile name
                                       'r' + str(i) + '-' +
@@ -165,14 +175,17 @@ def write_submission_files(pairs_dict, submissions_dir, maxrefs):
             refs_writeable = '\n'.join(ref_chunk) # format refs
             rfile = open(rfile_name, 'w')         # open rfile
             rfile.write(refs_writeable)           # write to rfile
+
             # write query file
             qfile_name = os.path.join(submissions_dir,    # create qfile name
                                       'q' + str(i) + '-' +
                                       str(j) + '.txt')
             qfile = open(qfile_name ,'w')         # open qfile
             qfile.write(query)                    # write to qfile
+
             # write qfile rfile pair info to files_dict
             files_dict[qfile_name] = rfile_name
+
     return(files_dict)
 
 def check_submission_format(file):
@@ -206,9 +219,9 @@ def ggdc_submit(url, email, blastVariant, queryfile, reffile):
     br.open(url)
 
     # begin filling out GGDC form
-    br.select_form('Form')                          # GGDC form name is "Form"
-    br.form.set_value(email, 'email')               # fill in email form
-    br.form.set_value([blastVariant], 'blastVariant') # fill in BLAST method form
+    br.select_form('Form')                            # GGDC form name is "Form"
+    br.form.set_value(email, 'email')                 # fill in email form
+    br.form.set_value([blastVariant], 'blastVariant') # fill in BLAST form
 
     # fill in query form from queryfile
     queryformat = check_submission_format(queryfile)
@@ -224,17 +237,13 @@ def ggdc_submit(url, email, blastVariant, queryfile, reffile):
             print('Error submitting ' + values + ' ' + type + '.')
     elif queryformat == 'filepath':
         name = 'targetGenome'
-        if len(qlines) > 1:
-            sys.exit('Sorry, submission of multiple fasta files is not yet '
-                     'supported. Exiting.')
-        else:
-            try:
-                br.form.add_file(open(values),
-                                 'text/plain',
-                                 values,
-                                 name = name)
-            except:
-                print('Error submitting ' + values + ' ' + type + '.')
+        try:
+            br.form.add_file(open(values),
+                             'text/plain',
+                             values,
+                             name = name)
+        except:
+            print('Error submitting ' + values + ' ' + type + '.')
     else: sys.exit('Unable to submit ' + type + ' ' + format + '. Exiting.')
 
     # fill in ref form from reffile
