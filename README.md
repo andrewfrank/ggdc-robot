@@ -1,4 +1,4 @@
-# ggdc-robot v0.0.3
+# ggdc-robot v0.0.4
 
 Automatically submit jobs to the Genome-to-Genome Distance Calculator (GGDC)
 website: https://ggdc.dsmz.de/ggdc.php, using GGDC v2.1.
@@ -8,8 +8,7 @@ website: https://ggdc.dsmz.de/ggdc.php, using GGDC v2.1.
 ggdc-robot relies on the following Python packages:
 - itertools
 - numpy
-- mechanize
-- BeautifulSoup
+- requests
 
 ## Installing
 
@@ -62,7 +61,7 @@ arguments:
                        ggdc-robot to wait 10 minutes when GGDC server slot
                        usage reaches 50 percent.
  --bruteforce, -f      enable brute force mode; this mode forces ggdc-robot
-                       to submit jobs to the GGDC server even when theserver
+                       to submit jobs to the GGDC server even when the server
                        load is at 100 percent; ATTENTION: jobs may fail due
                        to GGDC job queue limits.
  --blastVariant {GBDP2_BLASTPLUS,GBDP2_BLAT,GBDP2_BLASTZ,GBDP2_WU-BLAST,GBDP2_MUMMER},

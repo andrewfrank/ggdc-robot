@@ -13,8 +13,7 @@ import sys
 import itertools
 import numpy
 import time
-import mechanize
-from bs4 import BeautifulSoup
+import requests
 
 # COMMAND LINE ARGUMENTS
 
@@ -202,49 +201,38 @@ def check_submission_format(file):
 def get_ggdc_status(url):
 
     # browse to GGDC website
-    br = mechanize.Browser()
-    page = br.open(url)
+    page_request = requests.get(url)
 
     # check server load
-    page_html = BeautifulSoup(page, 'html.parser')
-    status_html = page_html.find('div', {'class': 'progress'})
-    status = status_html.get_text()
-    status_int = status.split("%", )
-    return(status_int[0])
+    page_html = page_request.text
+    status_loc = page_html.find('aria-valuenow=') + 15
+    status = page_html[status_loc]
+    return(status)
 
 def ggdc_submit(url, email, blastVariant, queryfile, reffile):
 
-    # browse to GGDC website
-    br = mechanize.Browser()
-    br.open(url)
-
     # begin filling out GGDC form
-    br.select_form('Form')                            # GGDC form name is "Form"
-    br.form.set_value(email, 'email')                 # fill in email form
-    br.form.set_value([blastVariant], 'blastVariant') # fill in BLAST form
+    form = [('blastVariant',(None,blastVariant)),
+            ("targetName",(None,"")),
+            ("targetGenome", (None, "")),
+            ("refGenbank",(None,"")),
+            ("multipleRefGenomes[]",(None, "")),
+            ('email',(None,email)),
+            ('singlebutton',(None,""))]
 
     # fill in query form from queryfile
     queryformat = check_submission_format(queryfile)
     with open(queryfile) as infile: qlines = infile.read().splitlines()
+    qline = qlines[0]
 
     if queryformat == 'accession':
-        control = 'targetName'
-        sep = ' '
-        values = sep.join(qlines)
-        try:
-            br.form.set_value(values, control)
-        except:
-            print('Error submitting ' + values + ' ' + type + '.')
+        form_value = ("targetName",(None,qline))
+        form[1] = form_value
     elif queryformat == 'filepath':
-        name = 'targetGenome'
-        try:
-            br.form.add_file(open(values),
-                             'text/plain',
-                             values,
-                             name = name)
-        except:
-            print('Error submitting ' + values + ' ' + type + '.')
-    else: sys.exit('Unable to submit ' + type + ' ' + format + '. Exiting.')
+        form_value = ("targetGenome",
+                      (qline,open(qline,"rb"),"application/octet-stream"))
+        form[2] = form_value
+    else: sys.exit('Error submitting query' + queryformat + '. Exiting.')
 
     # fill in ref form from reffile
     refformat = check_submission_format(reffile)
@@ -254,42 +242,32 @@ def ggdc_submit(url, email, blastVariant, queryfile, reffile):
         control = 'refGenbank'
         sep = '\r\n'
         values = sep.join(rlines)
-        try:
-            br.form.set_value(values, control)
-        except:
-            print('Error submitting ' + values + ' ' + type + '.')
+        form_value = ("refGenbank",(None,values))
+        form[3] = form_value
     elif refformat == 'filepath':
-        name = 'multipleRefGenomes[]'
-        if len(rlines) > 1:
-            sys.exit('Sorry, submission of multiple fasta files is not yet '
-                     'supported. Exiting.')
-        else:
-            try:
-                br.form.add_file(open(values),
-                                 'text/plain',
-                                 values,
-                                 name = name)
-            except:
-                print('Error submitting ' + values + ' ' + type + '.')
-    else: sys.exit('Unable to submit ' + type + ' ' + format + '. Exiting.')
+        mrg_form_values = []
+        for rline in rlines:
+            form_value = ("multipleRefGenomes[]",
+                          (rline, open(rline,"rb"),"application/octet-stream"))
+            mrg_form_values.append(form_value)
+        form[4] = mrg_form_values.pop(-1)
+        for v in mrg_form_values:
+            form.insert(4, mrg_form_values.pop(-1))
+    else: sys.exit('Unable to submit reference' + refformat + '. Exiting.')
 
     # submit GGDC job
-    submission = br.submit()
+    submission = requests.post(url, files = form)
 
     # get GGDC job response
-    submission_html = BeautifulSoup(submission, 'html.parser')
-    try:
-        response_html = submission_html.find('div', {'class': 'alert alert-success'})
-        response = response_html.get_text()
-    except:
-        response_html = submission_html.find('div', {'class': 'panel-body alert-danger'})
-        response = response_html.get_text()
+    submission_html = submission.content.decode()
+    if 'job with ID' in submission_html: response = 'Succeeded'
+    else: response = 'Failed'
     return(response)
 
 # iteratively submits each qfile-rfile pair to GGDC using ggdc-crawler.py;
 # currently pauses for 25 minutes every 6th submission
-def ggdc_submission_controller(url, email, blastVariant, files_dict,
-                               bruteforce, wait, slotusage):
+def ggdc_submission_controller(status_url, submit_url, email, blastVariant,
+                               files_dict, bruteforce, wait, slotusage):
 
     submission_count = 0
     jobs_requested = len(files_dict)
@@ -299,8 +277,8 @@ def ggdc_submission_controller(url, email, blastVariant, files_dict,
     for job_count, (qfile, rfile) in enumerate(files_dict.items(), 1):
         job_counter = str(job_count) + '/' + str(jobs_requested)
 
-        status = get_ggdc_status(url)
-        status_message = 'Current GGDC server load:' + status + '%'
+        status = get_ggdc_status(status_url)
+        status_message = 'Current GGDC server load:' + str(status) + '%'
         print(status_message)
 
         if bruteforce is False:
@@ -325,11 +303,12 @@ def ggdc_submission_controller(url, email, blastVariant, files_dict,
                time.sleep(wait[0] * 60)
 
         if job_count <= jobs_requested:
-            submission = ggdc_submit(url, email, blastVariant, qfile, rfile)
+            submission = ggdc_submit(submit_url, email, blastVariant,
+                                     qfile, rfile)
             job_count += 1
             submission_count += 1
-            print('GGDC server message:')
-            if 'Dear User,' in submission:
+            print('GGDC server submission attempt:')
+            if 'Succeeded' in submission:
                 print(submission)
                 print('Successfully submitted job ' + job_counter + '.')
                 if wait is not None:
@@ -351,7 +330,8 @@ def ggdc_submission_controller(url, email, blastVariant, files_dict,
 
 def main(args):
 
-    url = 'http://ggdc.dsmz.de/ggdc.php'
+    status_url = 'http://ggdc.dsmz.de/ggdc.php'
+    submit_url = 'http://ggdc.dsmz.de/submit_ggdc_job.php'
 
     email = args.email
     blastVariant = args.blastVariant
@@ -381,8 +361,8 @@ def main(args):
                                         submissions_dir,
                                         maxrefs = 75)
 
-    ggdc_submission_controller(url, email, blastVariant, files_dict,
-                               bruteforce, wait, slotusage)
+    ggdc_submission_controller(status_url, submit_url, email, blastVariant,
+                               files_dict, bruteforce, wait, slotusage)
     sys.exit('Script complete. Exiting.')
 
 if __name__ == "__main__":
