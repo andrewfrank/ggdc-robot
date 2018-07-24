@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-__version__ = '0.0.3'
+__version__ = '0.0.4'
 
 # Automatically submit jobs to the Genome-to-Genome Distance Calculator (GGDC)
 # website: https://ggdc.dsmz.de/ggdc.php, using GGDC v2.1.
