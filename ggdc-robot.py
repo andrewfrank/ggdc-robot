@@ -251,7 +251,7 @@ def ggdc_submit(url, email, blastVariant, queryfile, reffile):
                           (rline, open(rline,"rb"),"application/octet-stream"))
             mrg_form_values.append(form_value)
         form[4] = mrg_form_values.pop(-1)
-        for v in mrg_form_values:
+        for v in range(len(mrg_form_values)):
             form.insert(4, mrg_form_values.pop(-1))
     else: sys.exit('Unable to submit reference' + refformat + '. Exiting.')
 
